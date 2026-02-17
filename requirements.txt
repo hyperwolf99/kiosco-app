@@ -1,0 +1,10 @@
+# No se requieren dependencias externas
+# La app usa solo librerías incluidas en Python:
+# - tkinter (GUI)
+# - sqlite3 (Base de datos)
+# - json (Exportación)
+# - datetime (Fechas)
+# - pathlib (Rutas)
+
+# Opcional: para crear ejecutable .exe
+# pyinstaller>=5.0
