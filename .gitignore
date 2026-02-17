@@ -55,7 +55,6 @@ kiosco.db
 *.bat
 *.cmd
 *.sh
-test_*.py
 check_*.py
 .agents/
 .vscode/
