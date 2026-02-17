@@ -33,7 +33,7 @@ Sistema de gestión de ventas para kioscos 24 horas. Aplicación de escritorio o
 
 ```bash
 # Clonar repositorio
-git clone https://github.com/tu-usuario/kiosco-manager.git
+git clone https://github.com/hyperwolf99/kiosco-app.git
 cd kiosco-manager
 
 # Requisitos: Python 3.8 o superior
