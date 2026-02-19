@@ -441,7 +441,8 @@ class KioscoApp:
             'Efectivo': '💵',
             'Transferencia': '📱',
             'Débito': '💳',
-            'Crédito': '💎'
+            'Crédito': '💎',
+            'QR': '📲'
         }
         
         for i, forma_pago in enumerate(FormaPago):
@@ -614,6 +615,7 @@ class KioscoApp:
         menu.add_command(label="📱 Transferencia", command=lambda: self.cambiar_forma_pago(venta_id, values, "Transferencia"))
         menu.add_command(label="💳 Débito", command=lambda: self.cambiar_forma_pago(venta_id, values, "Débito"))
         menu.add_command(label="💳 Crédito", command=lambda: self.cambiar_forma_pago(venta_id, values, "Crédito"))
+        menu.add_command(label="📲 QR", command=lambda: self.cambiar_forma_pago(venta_id, values, "QR"))
         
         # Get cell position
         bbox = self.tree_ventas.bbox(item, '#3')

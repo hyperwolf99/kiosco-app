@@ -28,6 +28,7 @@ class FormaPago(Enum):
     TRANSFERENCIA = "Transferencia"
     DEBITO = "Débito"
     CREDITO = "Crédito"
+    QR = "QR"
 
 
 class EstadoFiado(Enum):
@@ -138,6 +139,38 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
+            # Add QR payment method if needed (without losing data)
+            try:
+                cursor.execute("PRAGMA table_info(ventas)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'forma_pago' in columns:
+                    # Check if QR is allowed
+                    cursor.execute("SELECT forma_pago FROM ventas WHERE forma_pago = 'QR' LIMIT 1")
+                    if not cursor.fetchone():
+                        # Recreate table with QR support
+                        cursor.execute("ALTER TABLE ventas RENAME TO ventas_old")
+                        cursor.execute('''
+                            CREATE TABLE ventas (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                monto REAL NOT NULL CHECK(monto > 0),
+                                forma_pago TEXT NOT NULL CHECK(forma_pago IN ('Efectivo', 'Transferencia', 'Débito', 'Crédito', 'QR')),
+                                cliente TEXT CHECK(length(cliente) >= 0),
+                                nota TEXT,
+                                fecha_hora DATETIME DEFAULT (datetime('now', 'localtime')),
+                                created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+                            )
+                        ''')
+                        cursor.execute("INSERT INTO ventas (id, monto, forma_pago, cliente, nota, fecha_hora, created_at) SELECT id, monto, forma_pago, cliente, nota, fecha_hora, created_at FROM ventas_old")
+                        cursor.execute("DROP TABLE ventas_old")
+                        conn.commit()
+                        logger.info("Método de pago QR agregado a la base de datos")
+            except Exception as e:
+                logger.info(f"QR migration: {e}")
+                try:
+                    conn.rollback()
+                except:
+                    pass
+            
             # Check if we need to migrate from old schema
             needs_migration = self._check_table_schema(conn, 'fiados', {'cliente'})
             
@@ -150,7 +183,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS ventas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     monto REAL NOT NULL CHECK(monto > 0),
-                    forma_pago TEXT NOT NULL CHECK(forma_pago IN ('Efectivo', 'Transferencia', 'Débito', 'Crédito')),
+                    forma_pago TEXT NOT NULL CHECK(forma_pago IN ('Efectivo', 'Transferencia', 'Débito', 'Crédito', 'QR')),
                     cliente TEXT CHECK(length(cliente) >= 0),
                     nota TEXT,
                     fecha_hora DATETIME DEFAULT (datetime('now', 'localtime')),
@@ -257,6 +290,28 @@ class Database:
         logger.info("Iniciando migración de base de datos...")
         
         try:
+            # Add QR payment method if it doesn't exist
+            try:
+                cursor.execute("ALTER TABLE ventas RENAME TO ventas_old")
+                cursor.execute('''
+                    CREATE TABLE ventas (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        monto REAL NOT NULL CHECK(monto > 0),
+                        forma_pago TEXT NOT NULL CHECK(forma_pago IN ('Efectivo', 'Transferencia', 'Débito', 'Crédito', 'QR')),
+                        cliente TEXT CHECK(length(cliente) >= 0),
+                        nota TEXT,
+                        fecha_hora DATETIME DEFAULT (datetime('now', 'localtime')),
+                        created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+                    )
+                ''')
+                cursor.execute("INSERT INTO ventas (id, monto, forma_pago, cliente, nota, fecha_hora, created_at) SELECT id, monto, forma_pago, cliente, nota, fecha_hora, created_at FROM ventas_old")
+                cursor.execute("DROP TABLE ventas_old")
+                logger.info("Método de pago QR agregado a la base de datos")
+                conn.commit()
+            except Exception as e:
+                logger.info(f"QR migration skipped: {e}")
+                conn.rollback()
+            
             # Backup old data
             cursor.execute("SELECT * FROM fiados")
             old_fiados = cursor.fetchall()
