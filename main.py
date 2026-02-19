@@ -92,7 +92,7 @@ class KioscoApp:
         self.root.configure(bg=Colors.BACKGROUND)
         
         # Detect low resolution for compact UI
-        self.is_low_res = screen_width <= 1400 or screen_height <= 800
+        self.is_low_res = screen_width <= 1600 or screen_height <= 900
         
         # Configure fonts for readability (smaller for low res)
         self.setup_fonts()
@@ -137,6 +137,7 @@ class KioscoApp:
             # Table fonts
             self.font_table_header = ("Segoe UI", 11, "bold")
             self.font_table_row = ("Segoe UI", 11)
+            self.table_row_height = 22
         else:
             # Main font - extra large for elderly users
             self.font_title = ("Segoe UI", 32, "bold")
@@ -149,6 +150,7 @@ class KioscoApp:
             # Extra large fonts for tables (important for visibility)
             self.font_table_header = ("Segoe UI", 14, "bold")
             self.font_table_row = ("Segoe UI", 14)
+            self.table_row_height = 35
         
         # Configure ttk styles for larger fonts in treeviews
         style = ttk.Style()
@@ -159,7 +161,7 @@ class KioscoApp:
         # Treeview colors - dark background with light text
         style.configure("Treeview", 
                         font=self.font_table_row, 
-                        rowheight=35,
+                        rowheight=self.table_row_height,
                         background=Colors.CARD_BG,
                         foreground=Colors.TEXT_PRIMARY,
                         fieldbackground=Colors.CARD_BG)
@@ -208,35 +210,12 @@ class KioscoApp:
     
     def create_ui(self):
         """Create main user interface"""
-        # Create scrollable frame for low resolution
-        if self.is_low_res:
-            # Create canvas with scrollbars
-            self.canvas = tk.Canvas(self.root, bg=Colors.BACKGROUND)
-            self.scrollbar_y = tk.Scrollbar(self.root, orient='vertical', command=self.canvas.yview)
-            self.scrollbar_x = tk.Scrollbar(self.root, orient='horizontal', command=self.canvas.xview)
-            
-            self.canvas.configure(yscrollcommand=self.scrollbar_y.set, xscrollcommand=self.scrollbar_x.set)
-            
-            self.scrollbar_y.pack(side='right', fill='y')
-            self.scrollbar_x.pack(side='bottom', fill='x')
-            self.canvas.pack(fill='both', expand=True)
-            
-            # Create main container inside canvas
-            self.main_container = tk.Frame(self.canvas, bg=Colors.BACKGROUND)
-            self.canvas.create_window((0, 0), window=self.main_container, anchor='nw')
-            
-            # Bind configure to update scroll region
-            self.main_container.bind('<Configure>', lambda e: self.canvas.configure(scrollregion=self.canvas.bbox('all')))
-            
-            pad = 10
-        else:
-            # Normal frame for high resolution
-            self.main_container = tk.Frame(self.root, bg=Colors.BACKGROUND)
-            self.main_container.pack(fill='both', expand=True, padx=20, pady=20)
-            pad = 20
+        # Main container
+        self.main_container = tk.Frame(self.root, bg=Colors.BACKGROUND)
+        self.main_container.pack(fill='both', expand=True, padx=10, pady=10)
         
         # Set treeview height based on resolution
-        self.tree_height = 10 if self.is_low_res else 15
+        self.tree_height = 8 if self.is_low_res else 15
         
         # Header
         self.create_header()
@@ -246,18 +225,12 @@ class KioscoApp:
         
         # Status bar
         self.create_status_bar()
-        
-        # Bind mousewheel for scrolling (only for low res)
-        if self.is_low_res:
-            self.canvas.bind_all('<MouseWheel>', self._on_mousewheel)
-    
-    def _on_mousewheel(self, event):
-        """Handle mousewheel scrolling"""
-        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
     
     def create_header(self):
         """Create application header with title"""
-        self.header_frame = tk.Frame(self.main_container, bg=Colors.PRIMARY, padx=20, pady=15)
+        header_padx = 10 if self.is_low_res else 20
+        header_pady = 8 if self.is_low_res else 15
+        self.header_frame = tk.Frame(self.main_container, bg=Colors.PRIMARY, padx=header_padx, pady=header_pady)
         self.header_frame.pack(fill='x', pady=(0, 20))
         
         title = tk.Label(
@@ -289,6 +262,13 @@ class KioscoApp:
             return "mañana"
         else:
             return "tarde"
+    
+    def format_currency(self, amount):
+        """Format amount with thousands separator and cents only if needed"""
+        if amount == int(amount):
+            return f"${int(amount):,}".replace(',', '.')
+        else:
+            return f"${amount:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     
     def update_time(self, label):
         """Update time display every minute and check for shift change"""
@@ -805,17 +785,17 @@ class KioscoApp:
         )
         self.daily_tarde_card.pack(side='left', padx=(0, 10))
         
-        # Payment method breakdown
-        self.daily_pagos_frame = tk.Frame(parent, bg=Colors.CARD_BG, padx=20, pady=15)
-        self.daily_pagos_frame.pack(fill='x', pady=(0, 20))
+        # Payment method breakdown - compact
+        self.daily_pagos_frame = tk.Frame(parent, bg=Colors.CARD_BG, padx=15, pady=8)
+        self.daily_pagos_frame.pack(fill='x', pady=(0, 10))
         
         tk.Label(
             self.daily_pagos_frame,
             text="Desglose por Forma de Pago",
-            font=self.font_header,
+            font=self.font_medium,
             bg=Colors.CARD_BG,
             fg=Colors.TEXT_PRIMARY
-        ).pack(anchor='w', pady=(0, 10))
+        ).pack(anchor='w', pady=(0, 5))
         
         # Sales detail treeview
         self.create_report_treeview(parent, 'daily')
@@ -1864,27 +1844,30 @@ class KioscoApp:
         formas_pago = list(FormaPago)
         selected_index = 0
         
-        # Main frame
-        main_frame = tk.Frame(dialog, padx=20, pady=15)
+        # Main frame - dark background
+        main_frame = tk.Frame(dialog, bg=Colors.CARD_BG, padx=20, pady=15)
         main_frame.pack(fill='both', expand=True)
         
-        # Label showing amount
+        # Label showing amount - white text
+        monto_str = self.format_currency(monto)
         tk.Label(
             main_frame,
-            text=f"${monto:.2f}",
+            text=monto_str,
             font=("Segoe UI", 28, "bold"),
-            fg=Colors.TEXT_PRIMARY
+            fg="white",
+            bg=Colors.CARD_BG
         ).pack(pady=(0, 10))
         
         tk.Label(
             main_frame,
             text="Seleccione forma de pago:",
             font=self.font_medium,
-            fg=Colors.TEXT_SECONDARY
+            fg="white",
+            bg=Colors.CARD_BG
         ).pack(pady=(0, 10))
         
-        # Button frame - one row, wrap if needed
-        btn_frame = tk.Frame(main_frame)
+        # Button frame - dark background
+        btn_frame = tk.Frame(main_frame, bg=Colors.CARD_BG)
         btn_frame.pack(pady=10)
         
         buttons = []
@@ -1896,9 +1879,11 @@ class KioscoApp:
                 text=f"{emoji} {forma_pago.value}",
                 font=self.font_medium,
                 bg=Colors.PRIMARY if i == 0 else Colors.CARD_BG,
-                fg="white" if i == 0 else Colors.TEXT_PRIMARY,
+                fg="white",
                 relief='solid',
                 bd=2,
+                highlightbackground=Colors.BORDER,
+                highlightthickness=1,
                 padx=15,
                 pady=8,
                 cursor="hand2"
@@ -1906,12 +1891,13 @@ class KioscoApp:
             btn.pack(side='left', padx=4, pady=4)
             buttons.append(btn)
         
-        # Instruction label
+        # Instruction label - white text
         tk.Label(
             main_frame,
             text="← → Navegar  |  Enter: Aceptar  |  Esc: Cancelar",
             font=self.font_normal,
-            fg=Colors.TEXT_SECONDARY
+            fg="white",
+            bg=Colors.CARD_BG
         ).pack(pady=(10, 0))
         
         # Center dialog on screen
@@ -2183,7 +2169,7 @@ class KioscoApp:
             
             tk.Label(
                 summary,
-                text=f"Total: ${datos['total']:.2f}  |  Ventas: {datos['cantidad']}",
+                text=f"Total: {self.format_currency(datos['total'])}  |  Ventas: {datos['cantidad']}",
                 font=self.font_large,
                 bg=Colors.CARD_BG,
                 fg=Colors.TEXT_PRIMARY
@@ -2193,7 +2179,7 @@ class KioscoApp:
             for forma_pago, info in datos['por_forma_pago'].items():
                 tk.Label(
                     summary,
-                    text=f"{forma_pago}: ${info['total']:.2f} ({info['cantidad']} ventas)",
+                    text=f"{forma_pago}: {self.format_currency(info['total'])} ({info['cantidad']} ventas)",
                     font=self.font_normal,
                     bg=Colors.CARD_BG,
                     fg=Colors.TEXT_SECONDARY
@@ -2206,7 +2192,7 @@ class KioscoApp:
                 hora = venta['fecha_hora'].split()[1] if venta['fecha_hora'] else ''
                 self.tree_search_report.insert('', 'end', values=(
                     hora,
-                    f"${venta['monto']:.2f}",
+                    self.format_currency(venta['monto']),
                     venta['forma_pago'],
                     venta['cliente'] or '-',
                     venta['nota'] or '-'
@@ -2250,7 +2236,7 @@ class KioscoApp:
             
             tk.Label(
                 summary,
-                text=f"Total del Mes: ${datos['total']:.2f}  |  Promedio: ${datos['promedio']:.2f}  |  Ventas: {datos['cantidad']}",
+                text=f"Total del Mes: {self.format_currency(datos['total'])}  |  Promedio: {self.format_currency(datos['promedio'])}  |  Ventas: {datos['cantidad']}",
                 font=self.font_large,
                 bg=Colors.CARD_BG,
                 fg=Colors.TEXT_PRIMARY
@@ -2260,7 +2246,7 @@ class KioscoApp:
             for forma_pago, info in datos['por_forma_pago'].items():
                 tk.Label(
                     summary,
-                    text=f"{forma_pago}: ${info['total']:.2f} ({info['cantidad']} ventas)",
+                    text=f"{forma_pago}: {self.format_currency(info['total'])} ({info['cantidad']} ventas)",
                     font=self.font_normal,
                     bg=Colors.CARD_BG,
                     fg=Colors.TEXT_SECONDARY
@@ -2486,7 +2472,7 @@ class KioscoApp:
             hora = venta['fecha_hora'].split()[1] if venta['fecha_hora'] else ''
             self.tree_ventas.insert('', 'end', values=(
                 hora,
-                f"${venta['monto']:.2f}",
+                self.format_currency(venta['monto']),
                 venta['forma_pago'],
                 venta['cliente'] or '-',
                 venta['nota'] or '-',
@@ -2499,30 +2485,45 @@ class KioscoApp:
         
         # Update cards
         if hasattr(self, 'daily_total_label'):
-            self.daily_total_label.config(text=f"${datos['total']:.2f}")
+            self.daily_total_label.config(text=self.format_currency(datos['total']))
         
         if hasattr(self, 'daily_count_label'):
             self.daily_count_label.config(text=f"{datos['cantidad']} ventas")
         
         if hasattr(self, 'daily_mañana_label'):
-            self.daily_mañana_label.config(text=f"${datos['turno_mañana']['total']:.2f}")
+            self.daily_mañana_label.config(text=self.format_currency(datos['turno_mañana']['total']))
         
         if hasattr(self, 'daily_tarde_label'):
-            self.daily_tarde_label.config(text=f"${datos['turno_tarde']['total']:.2f}")
+            self.daily_tarde_label.config(text=self.format_currency(datos['turno_tarde']['total']))
         
-        # Update payment breakdown
+        # Update payment breakdown - horizontal layout with colors
         if hasattr(self, 'daily_pagos_frame'):
             for widget in self.daily_pagos_frame.winfo_children()[1:]:  # Keep title
                 widget.destroy()
             
+            # Colors for each payment method
+            payment_colors = {
+                'Efectivo': '#10B981',      # Verde
+                'Transferencia': '#3B82F6', # Azul
+                'Débito': '#F59E0B',        # Ámbar
+                'Crédito': '#8B5CF6',       # Púrpura
+                'QR': '#EC4899'             # Rosa
+            }
+            
+            labels_frame = tk.Frame(self.daily_pagos_frame, bg=Colors.CARD_BG)
+            labels_frame.pack(anchor='w')
+            
             for forma_pago, info in datos['por_forma_pago'].items():
+                total_str = self.format_currency(info['total'])
+                color = payment_colors.get(forma_pago, Colors.TEXT_PRIMARY)
+                
                 tk.Label(
-                    self.daily_pagos_frame,
-                    text=f"{forma_pago}: ${info['total']:.2f} ({info['cantidad']} ventas)",
+                    labels_frame,
+                    text=f"{forma_pago}: {total_str} ({info['cantidad']})",
                     font=self.font_normal,
                     bg=Colors.CARD_BG,
-                    fg=Colors.TEXT_PRIMARY
-                ).pack(anchor='w', pady=2)
+                    fg=color
+                ).pack(side='left', padx=(0, 15))
         
         # Update treeview
         if hasattr(self, 'tree_daily_report'):
@@ -2533,7 +2534,7 @@ class KioscoApp:
                 hora = venta['fecha_hora'].split()[1] if venta['fecha_hora'] else ''
                 self.tree_daily_report.insert('', 'end', values=(
                     hora,
-                    f"${venta['monto']:.2f}",
+                    self.format_currency(venta['monto']),
                     venta['forma_pago'],
                     venta['cliente'] or '-',
                     venta['nota'] or '-'
@@ -2546,7 +2547,7 @@ class KioscoApp:
         # Update total card
         if hasattr(self, 'monthly_total_label'):
             self.monthly_total_label.config(
-                text=f"${datos['total']:.2f}"
+                text=self.format_currency(datos['total'])
             )
         
         # Update treeview
@@ -2557,11 +2558,11 @@ class KioscoApp:
             for dia in datos['por_dia']:
                 self.tree_mensual.insert('', 'end', values=(
                     dia['dia'],
-                    f"${dia['total']:.2f}",
-                    f"${dia['efectivo']:.2f}",
-                    f"${dia['transferencia']:.2f}",
-                    f"${dia['debito']:.2f}",
-                    f"${dia['credito']:.2f}"
+                    self.format_currency(dia['total']),
+                    self.format_currency(dia['efectivo']),
+                    self.format_currency(dia['transferencia']),
+                    self.format_currency(dia['debito']),
+                    self.format_currency(dia['credito'])
                 ))
     
     def cargar_fiados(self, estado=None):
@@ -2577,7 +2578,7 @@ class KioscoApp:
         # Update total label
         if hasattr(self, 'lbl_total_fiados'):
             self.lbl_total_fiados.config(
-                text=f"Total Pendiente General: ${stats['saldo_pendiente']:.2f}"
+                text=f"Total Pendiente General: {self.format_currency(stats['saldo_pendiente'])}"
             )
         
         # Populate treeview with saldo
@@ -2595,10 +2596,10 @@ class KioscoApp:
                 fiado['id'],
                 fecha,
                 fiado['cliente_nombre'],
-                f"${fiado['monto_total']:.2f}",
+                self.format_currency(fiado['monto_total']),
                 f"{fiado['interes_porcentaje']}%",
-                f"${fiado['monto_pagado']:.2f}",
-                f"${fiado['saldo_pendiente']:.2f}",
+                self.format_currency(fiado['monto_pagado']),
+                self.format_currency(fiado['saldo_pendiente']),
                 fiado['estado'],
                 fiado['nota'] or '-'
             ), tags=(tag,))
@@ -3037,8 +3038,8 @@ class KioscoApp:
             stats_fiados = self.db.obtener_estadisticas_fiados()
             
             self.lbl_totals.config(
-                text=f"💰 Hoy: ${ventas_hoy['total']:.2f}  |  "
-                     f"📒 Fiados pendientes: ${stats_fiados['saldo_pendiente']:.2f}"
+                text=f"💰 Hoy: {self.format_currency(ventas_hoy['total'])}  |  "
+                     f"📒 Fiados pendientes: {self.format_currency(stats_fiados['saldo_pendiente'])}"
             )
         except Exception as e:
             logger.error(f"Error al actualizar barra de estado: {e}")
