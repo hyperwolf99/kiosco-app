@@ -24,45 +24,45 @@ logger = logging.getLogger(__name__)
 
 # Color scheme - Paleta atractiva en modo claro
 class Colors:
-    """Esquema de colores atractivo y profesional"""
+    """Esquema de colores oscuro (Dark Theme)"""
     # Colores principales
     PRIMARY = "#3B82F6"           # Azul vibrante
     PRIMARY_DARK = "#1D4ED8"      # Azul oscuro para hover
-    PRIMARY_LIGHT = "#DBEAFE"     # Azul claro para fondos
+    PRIMARY_LIGHT = "#1E3A5F"     # Azul oscuro para fondos
     
     # Colores de éxito/positivos
     SUCCESS = "#10B981"           # Verde esmeralda
-    SUCCESS_DARK = "#059669"      # Verde oscuro
-    SUCCESS_LIGHT = "#D1FAE5"     # Verde claro
+    SUCCESS_DARK = "#059669"     # Verde oscuro
+    SUCCESS_LIGHT = "#064E3B"    # Verde oscuro para fondos
     
     # Colores de peligro/negativos
-    DANGER = "#EF4444"            # Rojo coral
-    DANGER_DARK = "#DC2626"       # Rojo oscuro
-    DANGER_LIGHT = "#FEE2E2"      # Rojo claro
+    DANGER = "#EF4444"           # Rojo coral
+    DANGER_DARK = "#DC2626"     # Rojo oscuro
+    DANGER_LIGHT = "#7F1D1D"    # Rojo oscuro para fondos
     
     # Colores de advertencia
-    WARNING = "#F59E0B"           # Ámbar
-    WARNING_DARK = "#D97706"      # Ámbar oscuro
-    WARNING_LIGHT = "#FEF3C7"     # Ámbar claro
+    WARNING = "#F59E0B"          # Ámbar
+    WARNING_DARK = "#D97706"     # Ámbar oscuro
+    WARNING_LIGHT = "#78350F"   # Ámbar oscuro para fondos
     
     # Colores de información
-    INFO = "#8B5CF6"              # Púrpura
-    INFO_DARK = "#7C3AED"         # Púrpura oscuro
-    INFO_LIGHT = "#EDE9FE"        # Púrpura claro
+    INFO = "#8B5CF6"            # Púrpura
+    INFO_DARK = "#7C3AED"       # Púrpura oscuro
+    INFO_LIGHT = "#4C1D95"      # Púrpura oscuro para fondos
     
-    # Colores de fondo
-    BACKGROUND = "#F1F5F9"        # Gris azulado muy claro
-    CARD_BG = "#FFFFFF"           # Blanco puro para tarjetas
-    CARD_BG_ALT = "#F8FAFC"       # Gris muy claro alternativo
+    # Colores de fondo - OSCURO
+    BACKGROUND = "#0F172A"       # Azul muy oscuro
+    CARD_BG = "#1E293B"         # Gris oscuro azulado
+    CARD_BG_ALT = "#334155"     # Gris oscuro alternativo
     
-    # Colores de texto
-    TEXT_PRIMARY = "#1E293B"      # Gris oscuro casi negro
-    TEXT_SECONDARY = "#64748B"    # Gris medio
-    TEXT_MUTED = "#94A3B8"        # Gris claro
+    # Colores de texto - CLARO para contraste
+    TEXT_PRIMARY = "#F1F5F9"    # Blanco grisáceo
+    TEXT_SECONDARY = "#94A3B8"  # Gris medio
+    TEXT_MUTED = "#64748B"      # Gris oscuro
     
     # Colores de borde
-    BORDER = "#CBD5E1"            # Gris azulado
-    BORDER_LIGHT = "#E2E8F0"      # Gris muy claro
+    BORDER = "#334155"          # Gris oscuro
+    BORDER_LIGHT = "#475569"   # Gris medio oscuro
     
     # Colores especiales
     ACCENT = "#EC4899"            # Rosa para acentos
@@ -152,8 +152,30 @@ class KioscoApp:
         
         # Configure ttk styles for larger fonts in treeviews
         style = ttk.Style()
-        style.configure("Treeview", font=self.font_table_row, rowheight=35)
-        style.configure("Treeview.Heading", font=self.font_table_header)
+        
+        # Dark theme for treeview
+        style.theme_use('clam')
+        
+        # Treeview colors - dark background with light text
+        style.configure("Treeview", 
+                        font=self.font_table_row, 
+                        rowheight=35,
+                        background=Colors.CARD_BG,
+                        foreground=Colors.TEXT_PRIMARY,
+                        fieldbackground=Colors.CARD_BG)
+        
+        # Treeview heading
+        style.configure("Treeview.Heading", 
+                        font=self.font_table_header,
+                        background=Colors.CARD_BG_ALT,
+                        foreground=Colors.TEXT_PRIMARY,
+                        relief='flat')
+        
+        # Selected row
+        style.map("Treeview", 
+                  background=[('selected', Colors.PRIMARY)],
+                  foreground=[('selected', 'white')])
+        
         style.configure("TNotebook.Tab", font=self.font_medium)
     
     def init_variables(self):
@@ -286,8 +308,21 @@ class KioscoApp:
         """Create tabbed interface"""
         # Style configuration for tabs
         style = ttk.Style()
+        style.theme_use('clam')
         style.configure('TNotebook', background=Colors.BACKGROUND)
         style.configure('TNotebook.Tab', font=self.font_medium, padding=[20, 10])
+        
+        # Treeview dark theme
+        style.configure("Treeview", 
+                        background=Colors.CARD_BG,
+                        foreground=Colors.TEXT_PRIMARY,
+                        fieldbackground=Colors.CARD_BG)
+        style.configure("Treeview.Heading", 
+                        background=Colors.CARD_BG_ALT,
+                        foreground=Colors.TEXT_PRIMARY)
+        style.map("Treeview", 
+                  background=[('selected', Colors.PRIMARY)],
+                  foreground=[('selected', 'white')])
         
         self.notebook = ttk.Notebook(self.main_container)
         self.notebook.pack(fill='both', expand=True)
@@ -2486,7 +2521,7 @@ class KioscoApp:
                     text=f"{forma_pago}: ${info['total']:.2f} ({info['cantidad']} ventas)",
                     font=self.font_normal,
                     bg=Colors.CARD_BG,
-                    fg=Colors.TEXT_SECONDARY
+                    fg=Colors.TEXT_PRIMARY
                 ).pack(anchor='w', pady=2)
         
         # Update treeview
