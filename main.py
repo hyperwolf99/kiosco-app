@@ -78,10 +78,23 @@ class KioscoApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("🏪 Kiosco Manager - Control de Ventas")
-        self.root.geometry("1200x800")
+        
+        # Get screen dimensions and set window size
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # Use 95% of screen size, with minimum of 1024x600
+        window_width = max(1024, int(screen_width * 0.95))
+        window_height = max(600, int(screen_height * 0.90))
+        
+        self.root.geometry(f"{window_width}x{window_height}")
+        self.root.minsize(1024, 600)
         self.root.configure(bg=Colors.BACKGROUND)
         
-        # Configure fonts for readability
+        # Detect low resolution for compact UI
+        self.is_low_res = screen_width <= 1400 or screen_height <= 800
+        
+        # Configure fonts for readability (smaller for low res)
         self.setup_fonts()
         
         # Initialize database
@@ -111,18 +124,31 @@ class KioscoApp:
         logger.info("Kiosco Manager iniciado correctamente")
     
     def setup_fonts(self):
-        """Setup accessible fonts following WCAG guidelines - EXTRA LARGE for readability"""
-        # Main font - extra large for elderly users
-        self.font_title = ("Segoe UI", 32, "bold")
-        self.font_header = ("Segoe UI", 20, "bold")
-        self.font_large = ("Segoe UI", 18)
-        self.font_medium = ("Segoe UI", 16)
-        self.font_normal = ("Segoe UI", 14)
-        self.font_small = ("Segoe UI", 12)
-        
-        # Extra large fonts for tables (important for visibility)
-        self.font_table_header = ("Segoe UI", 14, "bold")
-        self.font_table_row = ("Segoe UI", 14)
+        """Setup accessible fonts following WCAG guidelines"""
+        if self.is_low_res:
+            # Smaller fonts for low resolution screens
+            self.font_title = ("Segoe UI", 22, "bold")
+            self.font_header = ("Segoe UI", 16, "bold")
+            self.font_large = ("Segoe UI", 14)
+            self.font_medium = ("Segoe UI", 13)
+            self.font_normal = ("Segoe UI", 11)
+            self.font_small = ("Segoe UI", 10)
+            
+            # Table fonts
+            self.font_table_header = ("Segoe UI", 11, "bold")
+            self.font_table_row = ("Segoe UI", 11)
+        else:
+            # Main font - extra large for elderly users
+            self.font_title = ("Segoe UI", 32, "bold")
+            self.font_header = ("Segoe UI", 20, "bold")
+            self.font_large = ("Segoe UI", 18)
+            self.font_medium = ("Segoe UI", 16)
+            self.font_normal = ("Segoe UI", 14)
+            self.font_small = ("Segoe UI", 12)
+            
+            # Extra large fonts for tables (important for visibility)
+            self.font_table_header = ("Segoe UI", 14, "bold")
+            self.font_table_row = ("Segoe UI", 14)
         
         # Configure ttk styles for larger fonts in treeviews
         style = ttk.Style()
@@ -154,12 +180,41 @@ class KioscoApp:
         
         # Search variables
         self.var_buscar_fecha = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        
+        # Shift tracking for refresh
+        self.turno_actual = self.get_turno_actual()
     
     def create_ui(self):
         """Create main user interface"""
-        # Main container with padding
-        self.main_container = tk.Frame(self.root, bg=Colors.BACKGROUND)
-        self.main_container.pack(fill='both', expand=True, padx=20, pady=20)
+        # Create scrollable frame for low resolution
+        if self.is_low_res:
+            # Create canvas with scrollbars
+            self.canvas = tk.Canvas(self.root, bg=Colors.BACKGROUND)
+            self.scrollbar_y = tk.Scrollbar(self.root, orient='vertical', command=self.canvas.yview)
+            self.scrollbar_x = tk.Scrollbar(self.root, orient='horizontal', command=self.canvas.xview)
+            
+            self.canvas.configure(yscrollcommand=self.scrollbar_y.set, xscrollcommand=self.scrollbar_x.set)
+            
+            self.scrollbar_y.pack(side='right', fill='y')
+            self.scrollbar_x.pack(side='bottom', fill='x')
+            self.canvas.pack(fill='both', expand=True)
+            
+            # Create main container inside canvas
+            self.main_container = tk.Frame(self.canvas, bg=Colors.BACKGROUND)
+            self.canvas.create_window((0, 0), window=self.main_container, anchor='nw')
+            
+            # Bind configure to update scroll region
+            self.main_container.bind('<Configure>', lambda e: self.canvas.configure(scrollregion=self.canvas.bbox('all')))
+            
+            pad = 10
+        else:
+            # Normal frame for high resolution
+            self.main_container = tk.Frame(self.root, bg=Colors.BACKGROUND)
+            self.main_container.pack(fill='both', expand=True, padx=20, pady=20)
+            pad = 20
+        
+        # Set treeview height based on resolution
+        self.tree_height = 10 if self.is_low_res else 15
         
         # Header
         self.create_header()
@@ -169,6 +224,14 @@ class KioscoApp:
         
         # Status bar
         self.create_status_bar()
+        
+        # Bind mousewheel for scrolling (only for low res)
+        if self.is_low_res:
+            self.canvas.bind_all('<MouseWheel>', self._on_mousewheel)
+    
+    def _on_mousewheel(self, event):
+        """Handle mousewheel scrolling"""
+        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
     
     def create_header(self):
         """Create application header with title"""
@@ -197,9 +260,26 @@ class KioscoApp:
         # Update time every minute
         self.update_time(date_label)
     
+    def get_turno_actual(self):
+        """Get current shift based on hour"""
+        hour = datetime.now().hour
+        if 6 <= hour < 18:
+            return "mañana"
+        else:
+            return "tarde"
+    
     def update_time(self, label):
-        """Update time display every minute"""
-        label.config(text=datetime.now().strftime('%d/%m/%Y %H:%M'))
+        """Update time display every minute and check for shift change"""
+        now = datetime.now()
+        label.config(text=now.strftime('%d/%m/%Y %H:%M'))
+        
+        turno_actual = self.get_turno_actual()
+        
+        if hasattr(self, 'turno_actual'):
+            if self.turno_actual != turno_actual:
+                self.turno_actual = turno_actual
+                self.refresh_all()
+        
         self.root.after(60000, lambda: self.update_time(label))
     
     def create_tabs(self):
@@ -414,13 +494,13 @@ class KioscoApp:
         tree_frame = tk.Frame(parent, bg=Colors.CARD_BG)
         tree_frame.pack(fill='both', expand=True)
         
-        # Define columns
-        columns = ('hora', 'monto', 'pago', 'cliente', 'nota')
+        # Define columns (id is hidden)
+        columns = ('hora', 'monto', 'pago', 'cliente', 'nota', 'id')
         self.tree_ventas = ttk.Treeview(
             tree_frame,
             columns=columns,
             show='headings',
-            height=15
+            height=self.tree_height
         )
         
         # Configure columns
@@ -429,11 +509,14 @@ class KioscoApp:
         self.tree_ventas.heading('pago', text='Pago')
         self.tree_ventas.heading('cliente', text='Cliente')
         self.tree_ventas.heading('nota', text='Nota')
+        self.tree_ventas.heading('id', text='ID')
         
         self.tree_ventas.column('hora', width=80, anchor='center')
         self.tree_ventas.column('monto', width=100, anchor='e')
         self.tree_ventas.column('pago', width=120, anchor='center')
         self.tree_ventas.column('cliente', width=150)
+        self.tree_ventas.column('nota', width=200)
+        self.tree_ventas.column('id', width=0, stretch=False)
         self.tree_ventas.column('nota', width=200)
         
         # Scrollbar
@@ -442,6 +525,195 @@ class KioscoApp:
         
         self.tree_ventas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
+        
+        # Context menu for sales
+        self.tree_ventas.bind('<Button-3>', self.show_venta_context_menu)
+        self.tree_ventas.bind('<Double-Button-1>', self.on_venta_double_click)
+    
+    def show_venta_context_menu(self, event):
+        """Show context menu for sale actions"""
+        item = self.tree_ventas.identify_row(event.y)
+        if item:
+            self.tree_ventas.selection_set(item)
+            
+            menu = tk.Menu(self.root, tearoff=0)
+            menu.add_command(label="🗑️ Eliminar Venta", command=self.eliminar_venta)
+            menu.add_separator()
+            menu.add_command(label="💡 Doble clic para editar", state='disabled')
+            menu.add_separator()
+            menu.add_command(label="❌ Cancelar")
+            
+            menu.post(event.x_root, event.y_root)
+    
+    def on_venta_double_click(self, event):
+        """Handle double-click on sales treeview for inline editing"""
+        region = self.tree_ventas.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+        
+        column = self.tree_ventas.identify_column(event.x)
+        item = self.tree_ventas.identify_row(event.y)
+        if not item:
+            return
+        
+        self.tree_ventas.selection_set(item)
+        values = self.tree_ventas.item(item)['values']
+        venta_id = values[5] if len(values) > 5 else None
+        
+        column_map = {'#1': 'hora', '#2': 'monto', '#3': 'pago', '#4': 'cliente', '#5': 'nota'}
+        field = column_map.get(column)
+        
+        if field == 'monto':
+            self.edit_venta_monto(item, venta_id, values)
+        elif field == 'pago':
+            self.edit_venta_pago(item, venta_id, values)
+        elif field == 'cliente':
+            self.edit_venta_cliente(item, venta_id, values)
+        elif field == 'nota':
+            self.edit_venta_nota(item, venta_id, values)
+    
+    def edit_venta_monto(self, item, venta_id, values):
+        """Edit monto via dialog"""
+        monto_actual = float(values[1].replace('$', ''))
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Editar Monto")
+        dialog.geometry("300x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        tk.Label(dialog, text="Nuevo Monto:", font=self.font_medium).pack(pady=10)
+        var_monto = tk.StringVar(value=str(monto_actual))
+        entry = tk.Entry(dialog, textvariable=var_monto, font=self.font_medium)
+        entry.pack(pady=5)
+        entry.select_range(0, 'end')
+        entry.focus()
+        
+        def guardar(event=None):
+            try:
+                nuevo = float(var_monto.get().replace(',', '.'))
+                if nuevo <= 0:
+                    messagebox.showerror("Error", "El monto debe ser mayor a 0")
+                    return
+                self.db.modificar_venta(int(venta_id), nuevo, values[2])
+                dialog.destroy()
+                self.cargar_ventas_hoy()
+                self.update_daily_report()
+            except ValueError:
+                messagebox.showerror("Error", "Monto inválido")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        entry.bind('<Return>', guardar)
+        tk.Button(dialog, text="💾 Guardar", command=guardar, bg=Colors.SUCCESS, fg="white").pack(pady=10)
+    
+    def edit_venta_pago(self, item, venta_id, values):
+        """Edit forma_pago via buttons"""
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="💵 Efectivo", command=lambda: self.cambiar_forma_pago(venta_id, values, "Efectivo"))
+        menu.add_command(label="📱 Transferencia", command=lambda: self.cambiar_forma_pago(venta_id, values, "Transferencia"))
+        menu.add_command(label="💳 Débito", command=lambda: self.cambiar_forma_pago(venta_id, values, "Débito"))
+        menu.add_command(label="💳 Crédito", command=lambda: self.cambiar_forma_pago(venta_id, values, "Crédito"))
+        
+        # Get cell position
+        bbox = self.tree_ventas.bbox(item, '#3')
+        if bbox:
+            x = self.tree_ventas.winfo_rootx() + bbox[0]
+            y = self.tree_ventas.winfo_rooty() + bbox[1] + bbox[3]
+            menu.post(x, y)
+    
+    def cambiar_forma_pago(self, venta_id, values, nueva_forma):
+        monto = float(values[1].replace('$', ''))
+        cliente_actual = values[3] if values[3] != '-' else ''
+        nota_actual = values[4] if values[4] != '-' else ''
+        self.db.modificar_venta(int(venta_id), monto, nueva_forma, cliente=cliente_actual, nota=nota_actual)
+        self.cargar_ventas_hoy()
+        self.update_daily_report()
+    
+    def edit_venta_cliente(self, item, venta_id, values):
+        """Edit cliente via dialog"""
+        cliente_actual = values[3] if values[3] != '-' else ""
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Editar Cliente")
+        dialog.geometry("350x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        tk.Label(dialog, text="Cliente:", font=self.font_medium).pack(pady=10)
+        var_cliente = tk.StringVar(value=cliente_actual)
+        entry = tk.Entry(dialog, textvariable=var_cliente, font=self.font_medium)
+        entry.pack(pady=5, padx=20, fill='x')
+        entry.select_range(0, 'end')
+        entry.focus()
+        
+        def guardar(event=None):
+            try:
+                monto = float(values[1].replace('$', ''))
+                nota_actual = values[4] if values[4] != '-' else ''
+                self.db.modificar_venta(int(venta_id), monto, values[2], cliente=var_cliente.get(), nota=nota_actual)
+                dialog.destroy()
+                self.cargar_ventas_hoy()
+                self.update_daily_report()
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        entry.bind('<Return>', guardar)
+        tk.Button(dialog, text="💾 Guardar", command=guardar, bg=Colors.SUCCESS, fg="white").pack(pady=10)
+    
+    def edit_venta_nota(self, item, venta_id, values):
+        """Edit nota via dialog"""
+        nota_actual = values[4] if values[4] != '-' else ""
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Editar Nota")
+        dialog.geometry("350x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        tk.Label(dialog, text="Nueva Nota:", font=self.font_medium).pack(pady=10)
+        var_nota = tk.StringVar(value=nota_actual)
+        entry = tk.Entry(dialog, textvariable=var_nota, font=self.font_medium)
+        entry.pack(pady=5, padx=20, fill='x')
+        entry.select_range(0, 'end')
+        entry.focus()
+        
+        def guardar(event=None):
+            try:
+                monto = float(values[1].replace('$', ''))
+                cliente_actual = values[3] if values[3] != '-' else ''
+                self.db.modificar_venta(int(venta_id), monto, values[2], cliente=cliente_actual, nota=var_nota.get())
+                dialog.destroy()
+                self.cargar_ventas_hoy()
+                self.update_daily_report()
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        entry.bind('<Return>', guardar)
+        tk.Button(dialog, text="💾 Guardar", command=guardar, bg=Colors.SUCCESS, fg="white").pack(pady=10)
+    
+    def eliminar_venta(self):
+        """Delete selected sale"""
+        selected = self.tree_ventas.selection()
+        if not selected:
+            return
+        
+        item = self.tree_ventas.item(selected[0])
+        values = item['values']
+        
+        venta_id = values[5] if len(values) > 5 else None
+        if not venta_id:
+            return
+        
+        respuesta = messagebox.askyesno("Confirmar", "¿Estás seguro de eliminar esta venta?")
+        if respuesta:
+            try:
+                self.db.eliminar_venta(int(venta_id))
+                messagebox.showinfo("Éxito", "Venta eliminada correctamente")
+                self.cargar_ventas_hoy()
+                self.update_daily_report()
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
     
     def create_tab_reportes(self):
         """Create reports tab"""
@@ -482,6 +754,18 @@ class KioscoApp:
         )
         self.daily_count_card.pack(side='left', padx=(0, 10))
         
+        # Turno mañana card (6:00 - 18:00)
+        self.daily_mañana_card, self.daily_mañana_label = self.create_summary_card(
+            summary_frame, "MAÑANA (6-18)", "$0.00", Colors.WARNING
+        )
+        self.daily_mañana_card.pack(side='left', padx=(0, 10))
+        
+        # Turno tarde card (18:00 - 6:00)
+        self.daily_tarde_card, self.daily_tarde_label = self.create_summary_card(
+            summary_frame, "TARDE (18-6)", "$0.00", Colors.INFO
+        )
+        self.daily_tarde_card.pack(side='left', padx=(0, 10))
+        
         # Payment method breakdown
         self.daily_pagos_frame = tk.Frame(parent, bg=Colors.CARD_BG, padx=20, pady=15)
         self.daily_pagos_frame.pack(fill='x', pady=(0, 20))
@@ -510,7 +794,7 @@ class KioscoApp:
         
         # Daily breakdown treeview
         columns = ('fecha', 'total', 'efectivo', 'transferencia', 'debito', 'credito')
-        self.tree_mensual = ttk.Treeview(parent, columns=columns, show='headings', height=15)
+        self.tree_mensual = ttk.Treeview(parent, columns=columns, show='headings', height=self.tree_height)
         
         for col in columns:
             self.tree_mensual.heading(col, text=col.capitalize())
@@ -749,7 +1033,7 @@ class KioscoApp:
     def create_fiados_treeview(self, parent):
         """Create treeview for fiados"""
         columns = ('id', 'fecha', 'cliente', 'monto', 'interes', 'pagado', 'estado', 'nota')
-        self.tree_fiados = ttk.Treeview(parent, columns=columns, show='headings', height=15)
+        self.tree_fiados = ttk.Treeview(parent, columns=columns, show='headings', height=self.tree_height)
         
         display_columns = {
             'fecha': 'Fecha',
@@ -776,8 +1060,9 @@ class KioscoApp:
         self.tree_fiados.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
         
-        # Context menu
+        # Context menu and double-click
         self.tree_fiados.bind('<Button-3>', self.show_fiado_context_menu)
+        self.tree_fiados.bind('<Double-Button-1>', self.on_fiado_double_click)
     
     def show_fiado_context_menu(self, event):
         """Show context menu for fiado actions"""
@@ -787,11 +1072,123 @@ class KioscoApp:
             
             menu = tk.Menu(self.root, tearoff=0)
             menu.add_command(label="✅ Registrar Pago", command=self.registrar_pago_fiado)
+            menu.add_command(label="🗑️ Eliminar Fiado", command=self.eliminar_fiado)
+            menu.add_separator()
             menu.add_command(label="📋 Ver Historial", command=self.ver_historial_fiado)
+            menu.add_separator()
+            menu.add_command(label="💡 Doble clic para editar", state='disabled')
             menu.add_separator()
             menu.add_command(label="❌ Cancelar")
             
             menu.post(event.x_root, event.y_root)
+    
+    def on_fiado_double_click(self, event):
+        """Handle double-click on fiados treeview for inline editing"""
+        region = self.tree_fiados.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+        
+        column = self.tree_fiados.identify_column(event.x)
+        item = self.tree_fiados.identify_row(event.y)
+        if not item:
+            return
+        
+        self.tree_fiados.selection_set(item)
+        values = self.tree_fiados.item(item)['values']
+        fiado_id = values[0]
+        
+        column_map = {'#1': 'id', '#2': 'fecha', '#3': 'cliente', '#4': 'monto', '#5': 'interes', '#6': 'pagado', '#7': 'saldo', '#8': 'estado', '#9': 'nota'}
+        field = column_map.get(column)
+        
+        if field == 'monto':
+            self.edit_fiado_monto(item, fiado_id, values)
+        elif field == 'nota':
+            self.edit_fiado_nota(item, fiado_id, values)
+    
+    def edit_fiado_monto(self, item, fiado_id, values):
+        """Edit monto via dialog"""
+        monto_actual = float(values[3].replace('$', '').replace(',', ''))
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Editar Monto")
+        dialog.geometry("300x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        tk.Label(dialog, text="Nuevo Monto:", font=self.font_medium).pack(pady=10)
+        var_monto = tk.StringVar(value=str(monto_actual))
+        entry = tk.Entry(dialog, textvariable=var_monto, font=self.font_medium)
+        entry.pack(pady=5)
+        entry.select_range(0, 'end')
+        entry.focus()
+        
+        def guardar(event=None):
+            try:
+                nuevo = float(var_monto.get().replace(',', '.'))
+                if nuevo <= 0:
+                    messagebox.showerror("Error", "El monto debe ser mayor a 0")
+                    return
+                self.db.modificar_fiado(int(fiado_id), nuevo)
+                dialog.destroy()
+                self.cargar_fiados()
+            except ValueError:
+                messagebox.showerror("Error", "Monto inválido")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        entry.bind('<Return>', guardar)
+        tk.Button(dialog, text="💾 Guardar", command=guardar, bg=Colors.SUCCESS, fg="white").pack(pady=10)
+    
+    def edit_fiado_nota(self, item, fiado_id, values):
+        """Edit nota via dialog"""
+        nota_actual = values[8] if len(values) > 8 and values[8] != '-' else ""
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Editar Nota")
+        dialog.geometry("350x120")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        tk.Label(dialog, text="Nueva Nota:", font=self.font_medium).pack(pady=10)
+        var_nota = tk.StringVar(value=nota_actual)
+        entry = tk.Entry(dialog, textvariable=var_nota, font=self.font_medium)
+        entry.pack(pady=5, padx=20, fill='x')
+        entry.select_range(0, 'end')
+        entry.focus()
+        
+        def guardar(event=None):
+            try:
+                monto = float(values[3].replace('$', '').replace(',', ''))
+                self.db.modificar_fiado(int(fiado_id), monto, nota=var_nota.get())
+                dialog.destroy()
+                self.cargar_fiados()
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        entry.bind('<Return>', guardar)
+        tk.Button(dialog, text="💾 Guardar", command=guardar, bg=Colors.SUCCESS, fg="white").pack(pady=10)
+    
+    def eliminar_fiado(self):
+        """Delete selected fiado"""
+        selected = self.tree_fiados.selection()
+        if not selected:
+            return
+        
+        item = self.tree_fiados.item(selected[0])
+        values = item['values']
+        
+        fiado_id = values[0] if values else None
+        if not fiado_id:
+            return
+        
+        respuesta = messagebox.askyesno("Confirmar", "¿Estás seguro de eliminar este fiado?")
+        if respuesta:
+            try:
+                self.db.eliminar_fiado(int(fiado_id))
+                messagebox.showinfo("Éxito", "Fiado eliminado correctamente")
+                self.cargar_fiados()
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
     
     def create_summary_card(self, parent, title, value, color):
         """Create a summary card widget - returns (frame, value_label) tuple"""
@@ -1061,7 +1458,7 @@ class KioscoApp:
         
         # Fiados treeview - EXTRA LARGE FONT
         columns = ('id', 'fecha', 'cliente', 'monto_total', 'interes', 'pagado', 'saldo', 'estado', 'nota')
-        self.tree_fiados = ttk.Treeview(parent, columns=columns, show='headings', height=15)
+        self.tree_fiados = ttk.Treeview(parent, columns=columns, show='headings', height=self.tree_height)
         
         display_columns = {
             'fecha': 'Fecha',
@@ -1175,7 +1572,7 @@ class KioscoApp:
         
         # Payments treeview - EXTRA LARGE FONT
         columns = ('fecha', 'fiado', 'monto', 'nota')
-        self.tree_historial = ttk.Treeview(parent, columns=columns, show='headings', height=15)
+        self.tree_historial = ttk.Treeview(parent, columns=columns, show='headings', height=self.tree_height)
         
         headers = {'fecha': 'Fecha y Hora', 'fiado': 'Fiado #', 'monto': 'Monto Pagado', 'nota': 'Nota'}
         
@@ -1917,7 +2314,8 @@ class KioscoApp:
                 f"${venta['monto']:.2f}",
                 venta['forma_pago'],
                 venta['cliente'] or '-',
-                venta['nota'] or '-'
+                venta['nota'] or '-',
+                venta['id']
             ))
     
     def update_daily_report(self):
@@ -1930,6 +2328,12 @@ class KioscoApp:
         
         if hasattr(self, 'daily_count_label'):
             self.daily_count_label.config(text=f"{datos['cantidad']} ventas")
+        
+        if hasattr(self, 'daily_mañana_label'):
+            self.daily_mañana_label.config(text=f"${datos['turno_mañana']['total']:.2f}")
+        
+        if hasattr(self, 'daily_tarde_label'):
+            self.daily_tarde_label.config(text=f"${datos['turno_tarde']['total']:.2f}")
         
         # Update payment breakdown
         if hasattr(self, 'daily_pagos_frame'):

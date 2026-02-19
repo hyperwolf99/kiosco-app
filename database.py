@@ -315,6 +315,50 @@ class Database:
             logger.error(f"Error al agregar venta: {e}")
             raise DatabaseError(f"No se pudo registrar la venta: {e}")
     
+    def modificar_venta(self, venta_id: int, monto: float, forma_pago: str, cliente: str = "", nota: str = "") -> bool:
+        """
+        Modify an existing sale
+        Returns: True if successful
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE ventas 
+                    SET monto = ?, forma_pago = ?, cliente = ?, nota = ?
+                    WHERE id = ?
+                ''', (monto, forma_pago, cliente if cliente else None, nota if nota else None, venta_id))
+                
+                if cursor.rowcount == 0:
+                    raise DatabaseError(f"Venta con ID {venta_id} no encontrada")
+                
+                logger.info(f"Venta modificada: ID={venta_id}, Monto=${monto}, Pago={forma_pago}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error al modificar venta: {e}")
+            raise DatabaseError(f"No se pudo modificar la venta: {e}")
+    
+    def eliminar_venta(self, venta_id: int) -> bool:
+        """
+        Delete a sale
+        Returns: True if successful
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM ventas WHERE id = ?', (venta_id,))
+                
+                if cursor.rowcount == 0:
+                    raise DatabaseError(f"Venta con ID {venta_id} no encontrada")
+                
+                logger.info(f"Venta eliminada: ID={venta_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error al eliminar venta: {e}")
+            raise DatabaseError(f"No se pudo eliminar la venta: {e}")
+    
     def obtener_ventas_por_fecha(self, fecha: str) -> Dict[str, Any]:
         """
         Get sales for a specific date with optimized query
@@ -364,11 +408,45 @@ class Database:
             }
     
     def obtener_resumen_diario(self, fecha: Optional[str] = None) -> Dict[str, Any]:
-        """Get daily summary with statistics"""
+        """Get daily summary with statistics and shift breakdown"""
         if fecha is None:
             fecha = datetime.now().strftime('%Y-%m-%d')
         
-        return self.obtener_ventas_por_fecha(fecha)
+        datos = self.obtener_ventas_por_fecha(fecha)
+        
+        # Get shift breakdown
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Turno mañana: 6:00 - 18:00
+            cursor.execute('''
+                SELECT COUNT(*), SUM(monto)
+                FROM ventas 
+                WHERE date(fecha_hora) = ?
+                AND CAST(strftime('%H', fecha_hora) AS INTEGER) >= 6
+                AND CAST(strftime('%H', fecha_hora) AS INTEGER) < 18
+            ''', (fecha,))
+            stats_mañana = cursor.fetchone()
+            
+            # Turno tarde: 18:00 - 6:00 (next day)
+            cursor.execute('''
+                SELECT COUNT(*), SUM(monto)
+                FROM ventas 
+                WHERE date(fecha_hora) = ?
+                AND (CAST(strftime('%H', fecha_hora) AS INTEGER) >= 18 OR CAST(strftime('%H', fecha_hora) AS INTEGER) < 6)
+            ''', (fecha,))
+            stats_tarde = cursor.fetchone()
+        
+        datos['turno_mañana'] = {
+            'cantidad': stats_mañana[0] or 0,
+            'total': stats_mañana[1] or 0
+        }
+        datos['turno_tarde'] = {
+            'cantidad': stats_tarde[0] or 0,
+            'total': stats_tarde[1] or 0
+        }
+        
+        return datos
     
     def obtener_resumen_mensual(self, anio: Optional[int] = None, mes: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -581,6 +659,70 @@ class Database:
         except Exception as e:
             logger.error(f"Error al registrar pago: {e}")
             raise DatabaseError(f"No se pudo registrar el pago: {e}")
+    
+    def modificar_fiado(self, fiado_id: int, monto: float, forma_pago: str = "efectivo", nota: str = "") -> bool:
+        """
+        Modify an existing fiado (only if not fully paid)
+        Returns: True if successful
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('SELECT monto_total, monto_pagado, estado FROM fiados WHERE id = ?', (fiado_id,))
+                fiado = cursor.fetchone()
+                
+                if not fiado:
+                    raise DatabaseError(f"Fiado con ID {fiado_id} no encontrado")
+                
+                if fiado['estado'] == EstadoFiado.PAGADO.value:
+                    raise DatabaseError("No se puede modificar un fiado ya pagado completamente")
+                
+                monto_pagado = fiado['monto_pagado']
+                monto_original = monto - (fiado['monto_total'] - monto_pagado)
+                interes_porcentaje = 0
+                
+                cursor.execute('''
+                    UPDATE fiados 
+                    SET monto_original = ?, monto_total = ?, saldo_pendiente = ?, 
+                        interes_porcentaje = ?, nota = ?, updated_at = datetime('now', 'localtime')
+                    WHERE id = ?
+                ''', (monto_original, monto, monto - monto_pagado, interes_porcentaje, 
+                      nota if nota else None, fiado_id))
+                
+                logger.info(f"Fiado modificado: ID={fiado_id}, Monto=${monto}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error al modificar fiado: {e}")
+            raise DatabaseError(f"No se pudo modificar el fiado: {e}")
+    
+    def eliminar_fiado(self, fiado_id: int) -> bool:
+        """
+        Delete a fiado (only if not fully paid)
+        Returns: True if successful
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('SELECT estado FROM fiados WHERE id = ?', (fiado_id,))
+                fiado = cursor.fetchone()
+                
+                if not fiado:
+                    raise DatabaseError(f"Fiado con ID {fiado_id} no encontrado")
+                
+                if fiado['estado'] == EstadoFiado.PAGADO.value:
+                    raise DatabaseError("No se puede eliminar un fiado ya pagado completamente")
+                
+                cursor.execute('DELETE FROM fiados WHERE id = ?', (fiado_id,))
+                
+                logger.info(f"Fiado eliminado: ID={fiado_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error al eliminar fiado: {e}")
+            raise DatabaseError(f"No se pudo eliminar el fiado: {e}")
     
     def obtener_fiados(self, estado: Optional[str] = None, cliente_id: Optional[int] = None) -> List[sqlite3.Row]:
         """Get fiados with optional filters"""
