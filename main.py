@@ -292,6 +292,9 @@ class KioscoApp:
         self.notebook = ttk.Notebook(self.main_container)
         self.notebook.pack(fill='both', expand=True)
         
+        # Focus on monto field when Ventas tab is selected
+        self.notebook.bind('<<NotebookTabChanged>>', self.on_tab_changed)
+        
         # Tab 1: Register Sale
         self.tab_ventas = tk.Frame(self.notebook, bg=Colors.BACKGROUND)
         self.notebook.add(self.tab_ventas, text="💰  REGISTRAR VENTA")
@@ -322,23 +325,20 @@ class KioscoApp:
             fg=Colors.TEXT_PRIMARY
         ).pack(anchor='w', pady=(0, 20))
         
-        # Amount input
-        self.create_form_field(
+        # Amount input - smaller width
+        self.entry_monto = self.create_form_field(
             form_panel, "Monto ($):", self.var_monto,
-            is_number=True, is_large=True
+            is_number=True, is_large=True, width=15
         )
         
-        # Payment method selection
-        self.create_payment_method_selector(form_panel)
-        
-        # Client name (optional)
+        # Client name (optional) - smaller width
         self.create_form_field(
-            form_panel, "Cliente (opcional):", self.var_cliente
+            form_panel, "Cliente:", self.var_cliente, width=15
         )
         
-        # Note (optional)
+        # Note (optional) - smaller width
         self.create_form_field(
-            form_panel, "Nota (opcional):", self.var_nota
+            form_panel, "Nota:", self.var_nota, width=15
         )
         
         # Save button - LARGE and GREEN
@@ -376,7 +376,7 @@ class KioscoApp:
         # Sales treeview
         self.create_sales_treeview(sales_panel)
     
-    def create_form_field(self, parent, label_text, variable, is_number=False, is_large=False):
+    def create_form_field(self, parent, label_text, variable, is_number=False, is_large=False, width=None):
         """Create a labeled form field"""
         frame = tk.Frame(parent, bg=Colors.CARD_BG)
         frame.pack(fill='x', pady=10)
@@ -390,11 +390,14 @@ class KioscoApp:
         )
         label.pack(anchor='w')
         
+        if width is None:
+            width = 25 if is_large else 30
+        
         entry = tk.Entry(
             frame,
             textvariable=variable,
             font=self.font_large if is_large else self.font_medium,
-            width=25 if is_large else 30,
+            width=width,
             relief='solid',
             bd=2
         )
@@ -418,9 +421,9 @@ class KioscoApp:
             return False
     
     def create_payment_method_selector(self, parent):
-        """Create payment method buttons"""
+        """Create payment method buttons in two rows"""
         frame = tk.Frame(parent, bg=Colors.CARD_BG)
-        frame.pack(fill='x', pady=15)
+        frame.pack(fill='x', pady=10)
         
         tk.Label(
             frame,
@@ -430,9 +433,12 @@ class KioscoApp:
             fg=Colors.TEXT_PRIMARY
         ).pack(anchor='w')
         
-        # Button container
-        btn_frame = tk.Frame(frame, bg=Colors.CARD_BG)
-        btn_frame.pack(fill='x', pady=(10, 0))
+        # Two rows of buttons
+        row1_frame = tk.Frame(frame, bg=Colors.CARD_BG)
+        row1_frame.pack(fill='x', pady=(8, 3))
+        
+        row2_frame = tk.Frame(frame, bg=Colors.CARD_BG)
+        row2_frame.pack(fill='x', pady=(3, 0))
         
         self.payment_buttons = {}
         
@@ -445,49 +451,45 @@ class KioscoApp:
             'QR': '📲'
         }
         
+        # First row: Efectivo, Transferencia, Débito
+        # Second row: Crédito, QR
+        row1_methods = ['Efectivo', 'Transferencia', 'Débito']
+        row2_methods = ['Crédito', 'QR']
+        
         for i, forma_pago in enumerate(FormaPago):
             emoji = payment_emojis.get(forma_pago.value, '💵')
             btn_text = f"{emoji} {forma_pago.value}"
             
+            # Use smaller buttons
+            target_frame = row1_frame if forma_pago.value in row1_methods else row2_frame
+            
             btn = tk.Button(
-                btn_frame,
+                target_frame,
                 text=btn_text,
-                font=self.font_medium,
-                width=14,
+                font=self.font_small if self.is_low_res else self.font_medium,
+                width=12,
                 bg=Colors.PRIMARY if i == 0 else Colors.BACKGROUND,
                 fg="white" if i == 0 else Colors.TEXT_PRIMARY,
                 activebackground=Colors.PRIMARY_DARK,
                 activeforeground="white",
                 relief='solid',
-                bd=3 if i == 0 else 2,
+                bd=2,
                 highlightbackground=Colors.BORDER,
-                highlightthickness=2,
+                highlightthickness=1,
                 cursor="hand2",
                 command=lambda fp=forma_pago.value: self.select_payment_method(fp)
             )
-            btn.pack(side='left', padx=5)
+            
+            if forma_pago.value in row1_methods:
+                btn.pack(side='left', padx=3)
+            else:
+                btn.pack(side='left', padx=3)
+            
             self.payment_buttons[forma_pago.value] = btn
     
     def select_payment_method(self, forma_pago):
         """Handle payment method selection"""
         self.var_forma_pago.set(forma_pago)
-        
-        # Update button styles
-        for fp, btn in self.payment_buttons.items():
-            if fp == forma_pago:
-                btn.config(
-                    bg=Colors.PRIMARY,
-                    fg="white",
-                    relief='solid',
-                    bd=2
-                )
-            else:
-                btn.config(
-                    bg=Colors.BACKGROUND,
-                    fg=Colors.TEXT_PRIMARY,
-                    relief='solid',
-                    bd=2
-                )
     
     def create_sales_treeview(self, parent):
         """Create treeview for displaying sales"""
@@ -1741,14 +1743,19 @@ class KioscoApp:
     
     def setup_keyboard_shortcuts(self):
         """Setup keyboard shortcuts for power users"""
+        # Enter to save sale
         self.root.bind('<Return>', lambda e: self.guardar_venta())
+        
+        # Tab navigation between tabs
         self.root.bind('<F1>', lambda e: self.notebook.select(0))
         self.root.bind('<F2>', lambda e: self.notebook.select(1))
         self.root.bind('<F3>', lambda e: self.notebook.select(2))
+        
+        # F5 to refresh
         self.root.bind('<F5>', lambda e: self.refresh_all())
     
     def guardar_venta(self):
-        """Save a new sale"""
+        """Save a new sale - shows payment method selection dialog"""
         try:
             # Validate amount
             monto_str = self.var_monto.get().strip()
@@ -1765,9 +1772,14 @@ class KioscoApp:
                 return
             
             # Get other values
-            forma_pago = self.var_forma_pago.get()
             cliente = self.var_cliente.get().strip()
             nota = self.var_nota.get().strip()
+            
+            # Show payment method selection dialog
+            forma_pago = self.seleccionar_metodo_pago_dialog(monto)
+            
+            if not forma_pago:
+                return  # User cancelled
             
             # Save to database
             venta_id = self.db.agregar_venta(monto, forma_pago, cliente, nota)
@@ -1797,6 +1809,124 @@ class KioscoApp:
         except Exception as e:
             messagebox.showerror("❌ Error", f"Error inesperado: {str(e)}")
             logger.error(f"Error inesperado: {e}")
+    
+    def seleccionar_metodo_pago_dialog(self, monto):
+        """Show dialog to select payment method with keyboard navigation"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Forma de Pago")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        payment_emojis = {
+            'Efectivo': '💵',
+            'Transferencia': '📱',
+            'Débito': '💳',
+            'Crédito': '💎',
+            'QR': '📲'
+        }
+        
+        formas_pago = list(FormaPago)
+        selected_index = 0
+        
+        # Main frame
+        main_frame = tk.Frame(dialog, padx=20, pady=15)
+        main_frame.pack(fill='both', expand=True)
+        
+        # Label showing amount
+        tk.Label(
+            main_frame,
+            text=f"${monto:.2f}",
+            font=("Segoe UI", 28, "bold"),
+            fg=Colors.TEXT_PRIMARY
+        ).pack(pady=(0, 10))
+        
+        tk.Label(
+            main_frame,
+            text="Seleccione forma de pago:",
+            font=self.font_medium,
+            fg=Colors.TEXT_SECONDARY
+        ).pack(pady=(0, 10))
+        
+        # Button frame - one row, wrap if needed
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.pack(pady=10)
+        
+        buttons = []
+        
+        for i, forma_pago in enumerate(formas_pago):
+            emoji = payment_emojis.get(forma_pago.value, '💵')
+            btn = tk.Button(
+                btn_frame,
+                text=f"{emoji} {forma_pago.value}",
+                font=self.font_medium,
+                bg=Colors.PRIMARY if i == 0 else Colors.CARD_BG,
+                fg="white" if i == 0 else Colors.TEXT_PRIMARY,
+                relief='solid',
+                bd=2,
+                padx=15,
+                pady=8,
+                cursor="hand2"
+            )
+            btn.pack(side='left', padx=4, pady=4)
+            buttons.append(btn)
+        
+        # Instruction label
+        tk.Label(
+            main_frame,
+            text="← → Navegar  |  Enter: Aceptar  |  Esc: Cancelar",
+            font=self.font_normal,
+            fg=Colors.TEXT_SECONDARY
+        ).pack(pady=(10, 0))
+        
+        # Center dialog on screen
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() - dialog.winfo_reqwidth()) // 2
+        y = (dialog.winfo_screenheight() - dialog.winfo_reqheight()) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        result = {'forma_pago': None}
+        
+        def update_selection(index):
+            nonlocal selected_index
+            selected_index = index
+            for i, btn in enumerate(buttons):
+                if i == selected_index:
+                    btn.config(bg=Colors.PRIMARY, fg="white")
+                    btn.focus_set()
+                else:
+                    btn.config(bg=Colors.CARD_BG, fg=Colors.TEXT_PRIMARY)
+        
+        def on_key(event):
+            if event.keysym == 'Left':
+                update_selection((selected_index - 1) % len(formas_pago))
+            elif event.keysym == 'Right':
+                update_selection((selected_index + 1) % len(formas_pago))
+            elif event.keysym == 'Return':
+                result['forma_pago'] = formas_pago[selected_index].value
+                dialog.destroy()
+            elif event.keysym == 'Escape':
+                dialog.destroy()
+        
+        def on_click(index):
+            result['forma_pago'] = formas_pago[index].value
+            dialog.destroy()
+        
+        # Bind keyboard events
+        dialog.bind('<Key>', on_key)
+        
+        # Bind click events to buttons
+        for i, btn in enumerate(buttons):
+            btn.config(command=lambda i=i: on_click(i))
+        
+        # Initial selection and focus
+        update_selection(0)
+        buttons[0].focus_set()
+        
+        # Wait for dialog to close
+        dialog.wait_window()
+        
+        return result['forma_pago']
     
     def guardar_fiado(self):
         """Save a new fiado with client ID"""
@@ -2284,6 +2414,14 @@ class KioscoApp:
     def load_initial_data(self):
         """Load initial data when app starts"""
         self.refresh_all()
+        # Focus on monto field for quick entry
+        if hasattr(self, 'entry_monto'):
+            self.entry_monto.focus_set()
+    
+    def on_tab_changed(self, event):
+        """Handle tab change - focus on monto field when Ventas tab is selected"""
+        if hasattr(self, 'entry_monto'):
+            self.entry_monto.focus_set()
     
     def refresh_all(self):
         """Refresh all data displays"""
